@@ -1,0 +1,11 @@
+apiVersion: fleet.cattle.io/v1alpha1
+kind: GitRepo
+metadata:
+  name: helloworld
+spec:
+  targets:
+    - name: local-cluster
+      clusterSelector:
+        matchLabels:
+          environment: local
+  path: helloworld
