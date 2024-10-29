@@ -1,0 +1,30 @@
+{{ if and .Values.privateIngress (gt (.Values.replicas | int) 0) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-private
+  labels:
+    {{- include "default-labels" . | nindent 4 }}
+    {{- with .Values.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if .Values.privateIngress.websocketEnabled }}
+  annotations:
+     projectcontour.io/websocket-routes: {{ range $i, $rule := .Values.privateIngress.hosts }}{{ if ne $i 0 }},{{ end }}{{ $rule.path }}{{ end -}}
+  {{ end }}
+spec:
+  ingressClassName: private
+  rules:
+    {{- range $rule := .Values.privateIngress.hosts }}
+    - host: {{ $rule.host }}
+      http:
+        paths:
+          - pathType: Prefix
+            path: {{ $rule.path }}
+            backend:
+              service:
+                name: {{ $.Release.Name }}
+                port:
+                  name: http
+    {{ end }}
+{{ end }}

@@ -1,0 +1,44 @@
+app:
+  httpPort: 80
+replicas: 1
+resources:
+  requests:
+    memory: 128Mi
+    cpu: 100m
+  limits:
+    memory: 128Mi
+env:
+  FOO: BAR
+image:
+  registry: ""
+  repository: strm/helloworld-http
+  tag: latest
+  pullPolicy: Always
+service:
+  enabled: true
+privateIngress:
+  hosts:
+    - host: helloworld.local
+      path: /
+livenessProbe:
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 5
+  httpGet:
+    port: 80
+    path: /health
+readinessProbe:
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 5
+  httpGet:
+    port: 80
+    path: /health
+startupProbe:
+  periodSeconds: 5
+  timeoutSeconds: 5
+  failureThreshold: 17
+  httpGet:
+    port: 80
+    path: /health
+terminationGracePeriodSeconds: 60

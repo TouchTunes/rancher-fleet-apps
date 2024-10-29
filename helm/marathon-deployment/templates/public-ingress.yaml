@@ -1,0 +1,41 @@
+{{ if and .Values.publicIngress (gt (.Values.replicas | int) 0) }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-public
+  labels:
+    {{- include "default-labels" . | nindent 4 }}
+    {{- with .Values.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- if .Values.publicIngress.websocketEnabled }}
+  annotations:
+     projectcontour.io/websocket-routes: {{ range $i, $rule := .Values.publicIngress.hosts }}{{ if ne $i 0 }},{{ end }}{{ $rule.path }}{{ end -}}
+  {{ end }}
+spec:
+  ingressClassName: public
+  rules:
+    {{- range $rule :=  .Values.publicIngress.hosts }}
+    - host: {{ $rule.host }}
+      http:
+        paths:
+          {{- with $.Values.publicIngress.protectedPaths }}
+          {{- range . }}
+          - pathType: Prefix
+            path: {{ . }}
+            backend:
+              service:
+                name: default-backend
+                port:
+                  name: http-403
+          {{- end }}
+          {{- end }}
+          - pathType: Prefix
+            path: {{ $rule.path }}
+            backend:
+              service:
+                name: {{ $.Release.Name }}
+                port:
+                  name: http
+    {{ end }}
+{{ end }}

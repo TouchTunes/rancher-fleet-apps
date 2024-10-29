@@ -1,0 +1,15 @@
+{{ if gt (.Values.replicas | int) 0 }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "default-labels" . | nindent 4 }}
+    {{- with .Values.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector: {{- include "default-selector" . | nindent 4 }}
+  minAvailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+{{ end }}

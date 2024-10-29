@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "default-labels" . | nindent 4 }}
+    {{- with .Values.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{ if le (.Values.replicas | int) 0 }}
+  # Set paused=true so the app appears as suspended in argocd.
+  # This is a workaround for https://github.com/argoproj/argo-cd/issues/7451 (it would be better to not create the
+  # deployment at all).
+  paused: true
+  {{- end }}
+  revisionHistoryLimit: 0
+  replicas: {{ .Values.replicas }}
+  selector: {{- include "default-selector" . | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "default-selector-labels" . | nindent 8 }}
+        moji.touchtunes.com/deployment-timestamp: {{ .Values.deploymentTimestamp | quote }}
+      {{- if not .Values.dynatrace.enabled }}
+      annotations:
+        oneagent.dynatrace.com/inject: "false"
+        data-ingest.dynatrace.com/inject: "false"
+      {{- end }}
+    spec:
+      enableServiceLinks: false
+      automountServiceAccountToken: false
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      initContainers:
+        # Workaround for https://github.com/cloudnativelabs/kube-router/issues/873.
+        - name: network-readiness
+          image: docker-upstream.artifactory.tsp.cld.touchtunes.com/busybox:1.36.0-uclibc
+          command: ['sh', '-c', "while ! nslookup -timeout=10 coredns.kube-system.svc.cluster.local. >/dev/null 2>&1; do echo 'Waiting for network to be ready'; sleep 1; done"]
+          resources:
+            requests:
+              cpu: 1m
+              memory: 8Mi
+            limits:
+              memory: 8Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+      containers:
+        - name: app
+          image: {{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.app.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.app.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.app.httpPort }}
+          ports:
+            - name: http
+              containerPort: {{ . }}
+          {{- end }}
+          env:
+            # Required to trigger credentials download in the old app images.
+            - name: MESOS_TASK_ID
+              value: not-mesos
+            # Static value for the config proxy URL service.
+            - name: CONFIG_PROXY_URL
+              value: http://config-proxy.apps-infra.svc.cluster.local.
+          {{- range $key, $val := .Values.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+          {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom:
+          {{- with .secrets }}
+          {{- range $secret := . }}
+            - secretRef:
+                name: {{ $secret | quote }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            # Try to stay as close as possible to the restricted pod-security standard, even if cannot enforce it yet.
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - SETGID # gosu.
+                - SETUID # gosu.
+                - CHOWN # chown.
+                - KILL # tini.
+                - DAC_OVERRIDE # for containers running nginx.
